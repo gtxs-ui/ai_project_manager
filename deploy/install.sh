@@ -84,29 +84,7 @@ for svc in worker bridge; do
         -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
         -e "s|__SERVICE_USER__|$SERVICE_USER|g" \
         "$INSTALL_DIR/deploy/project-manager-${svc}.service.template" \
-        > "$SVC_FILE" 2>/dev/null || \
-    # If template doesn't exist, write inline
-    cat > "$SVC_FILE" << SVCEOF
-[Unit]
-Description=Project Manager ${svc^}
-After=network.target
-Wants=network.target
-
-[Service]
-Type=simple
-User=$SERVICE_USER
-WorkingDirectory=$INSTALL_DIR
-EnvironmentFile=-$INSTALL_DIR/.env
-ExecStart=$INSTALL_DIR/venv/bin/python3 $INSTALL_DIR/pm_${svc}.py
-Restart=on-failure
-RestartSec=10
-StandardOutput=append:$INSTALL_DIR/data/pm/${svc}_stdout.log
-StandardError=append:$INSTALL_DIR/data/pm/${svc}_stdout.log
-ReadWritePaths=$INSTALL_DIR /root/.claude $HOME/.claude
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
+        > "$SVC_FILE"
     echo "  Installed: $SVC_FILE"
 done
 
