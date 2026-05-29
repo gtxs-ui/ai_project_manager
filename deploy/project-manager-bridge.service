@@ -1,0 +1,19 @@
+[Unit]
+Description=Project Manager Telegram Bridge
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/project_manager
+EnvironmentFile=-/opt/project_manager/.env
+ExecStart=/opt/project_manager/venv/bin/python3 /opt/project_manager/pm_bridge.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/opt/project_manager/data/pm/bridge_stdout.log
+StandardError=append:/opt/project_manager/data/pm/bridge_stdout.log
+ReadWritePaths=/opt/project_manager /root/.claude
+
+[Install]
+WantedBy=multi-user.target
