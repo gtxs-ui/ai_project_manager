@@ -1,0 +1,18 @@
+[Unit]
+Description=Project Manager Worker
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=-__INSTALL_DIR__/.env
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/pm_worker.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:__INSTALL_DIR__/data/pm/worker_stdout.log
+StandardError=append:__INSTALL_DIR__/data/pm/worker_stdout.log
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,7 @@ Single Claude-powered PM that:
 - Writes results to outbox/ for Telegram bridge to pick up
 """
 
+import fcntl
 import json
 import os
 import shutil
@@ -27,6 +28,7 @@ OUTBOX_SENT     = DATA_ROOT / "outbox_sent"
 WORKSPACE       = DATA_ROOT / "workspace"
 STATE_FILE      = DATA_ROOT / "state.json"
 LOG_FILE        = DATA_ROOT / "log.txt"
+PID_FILE        = DATA_ROOT / "worker.pid"
 
 for d in (INBOX, OUTBOX_TELEGRAM, OUTBOX_SENT, WORKSPACE, DATA_WORKERS):
     d.mkdir(parents=True, exist_ok=True)
@@ -427,6 +429,15 @@ def process_task(task_file: Path, state: dict) -> None:
 
 
 def main() -> None:
+    _pid_fd = open(PID_FILE, "w")
+    try:
+        fcntl.flock(_pid_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError:
+        print("ERROR: another worker instance is already running. Exiting.", file=sys.stderr)
+        sys.exit(1)
+    _pid_fd.write(str(os.getpid()))
+    _pid_fd.flush()
+
     _write_workspace_claude_md()
     _init_memory_files()
 

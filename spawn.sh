@@ -6,6 +6,20 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$SCRIPT_DIR/data/pm"
 
+# Refuse to run if systemd is already managing these services — otherwise we'd
+# kill systemd's process via the PID file, then systemd's Restart=on-failure
+# would try to relaunch and crash-loop against our flock.
+if command -v systemctl >/dev/null 2>&1; then
+    for svc in project-manager-worker project-manager-bridge; do
+        if systemctl is-active --quiet "$svc.service" 2>/dev/null; then
+            echo "ERROR: $svc.service is active under systemd."
+            echo "Manage it with: sudo systemctl {start,stop,restart} $svc.service"
+            echo "Aborting spawn.sh to avoid a crash loop."
+            exit 1
+        fi
+    done
+fi
+
 # Find Python
 PYTHON=""
 for p in "$SCRIPT_DIR/venv/bin/python3" python3 python; do
