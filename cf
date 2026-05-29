@@ -1,0 +1,110 @@
+#!/bin/bash
+# Thin Cloudflare API helper for PM + workers.
+#
+# Loads CF_TOKEN from env or from data/pm/workspace/.secrets/cloudflare.env
+# (file should contain a single line: CF_TOKEN=<your-scoped-token>).
+#
+# Usage:
+#   cf verify                              — sanity-check the token
+#   cf zones                               — list authorized zones (name → id)
+#   cf zone-id <zone-name>                 — print just the zone id
+#   cf dns-list <zone-name>                — list DNS records (id type name content proxied)
+#   cf dns-add <zone-name> <type> <name> <content> [proxied=true|false]
+#                                          — create a record (default proxied=true for A/AAAA/CNAME)
+#   cf dns-del <zone-name> <record-id>     — delete one record
+#   cf purge <zone-name> <url1> [url2 ...] — purge specific URLs from edge cache
+#   cf purge-all <zone-name>               — purge everything (use sparingly)
+#
+# Exit codes: 0 success, 1 bad args, 2 API error.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SECRETS_FILE="$SCRIPT_DIR/data/pm/workspace/.secrets/cloudflare.env"
+
+# Show help without requiring the token.
+case "${1:-}" in
+    ""|-h|--help|help)
+        sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+        exit 0
+        ;;
+esac
+
+if [ -z "$CF_TOKEN" ] && [ -f "$SECRETS_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$SECRETS_FILE"
+fi
+
+if [ -z "$CF_TOKEN" ]; then
+    echo "ERROR: CF_TOKEN not set. Either export it or put CF_TOKEN=… in $SECRETS_FILE" >&2
+    exit 1
+fi
+
+API="https://api.cloudflare.com/client/v4"
+AUTH=(-H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json")
+
+cf_zone_id() {
+    local zone="$1"
+    [ -z "$zone" ] && { echo "ERROR: zone name required" >&2; return 1; }
+    local id
+    id=$(curl -sS "${AUTH[@]}" "$API/zones?name=$zone" | jq -r '.result[0].id // empty')
+    if [ -z "$id" ]; then
+        echo "ERROR: zone '$zone' not found or token lacks access" >&2
+        return 2
+    fi
+    echo "$id"
+}
+
+case "${1:-}" in
+    verify)
+        curl -sS "${AUTH[@]}" "$API/user/tokens/verify" | jq .
+        ;;
+    zones)
+        curl -sS "${AUTH[@]}" "$API/zones?per_page=50" \
+            | jq -r '.result[] | "\(.name)\t\(.id)"'
+        ;;
+    zone-id)
+        cf_zone_id "$2"
+        ;;
+    dns-list)
+        zid=$(cf_zone_id "$2")
+        curl -sS "${AUTH[@]}" "$API/zones/$zid/dns_records?per_page=100" \
+            | jq -r '.result[] | "\(.id)\t\(.type)\t\(.name)\t\(.content)\tproxied=\(.proxied)"'
+        ;;
+    dns-add)
+        zid=$(cf_zone_id "$2")
+        rtype="$3"; rname="$4"; rcontent="$5"
+        rprox="${6:-true}"
+        [ -z "$rcontent" ] && { echo "Usage: cf dns-add <zone> <type> <name> <content> [proxied]" >&2; exit 1; }
+        case "$rtype" in TXT|MX|SRV|CAA) rprox=false ;; esac
+        curl -sS "${AUTH[@]}" -X POST "$API/zones/$zid/dns_records" \
+            -d "$(jq -n --arg t "$rtype" --arg n "$rname" --arg c "$rcontent" --argjson p "$rprox" \
+                  '{type:$t,name:$n,content:$c,proxied:$p,ttl:1}')" \
+            | jq '.result | {id,type,name,content,proxied}'
+        ;;
+    dns-del)
+        zid=$(cf_zone_id "$2")
+        rid="$3"
+        [ -z "$rid" ] && { echo "Usage: cf dns-del <zone> <record-id>" >&2; exit 1; }
+        curl -sS "${AUTH[@]}" -X DELETE "$API/zones/$zid/dns_records/$rid" | jq .
+        ;;
+    purge)
+        zid=$(cf_zone_id "$2")
+        shift 2
+        [ $# -eq 0 ] && { echo "Usage: cf purge <zone> <url1> [url2 ...]" >&2; exit 1; }
+        files_json=$(printf '%s\n' "$@" | jq -R . | jq -s .)
+        curl -sS "${AUTH[@]}" -X POST "$API/zones/$zid/purge_cache" \
+            -d "$(jq -n --argjson f "$files_json" '{files:$f}')" \
+            | jq .
+        ;;
+    purge-all)
+        zid=$(cf_zone_id "$2")
+        curl -sS "${AUTH[@]}" -X POST "$API/zones/$zid/purge_cache" \
+            -d '{"purge_everything":true}' \
+            | jq .
+        ;;
+    *)
+        echo "ERROR: unknown subcommand '$1'. Run 'cf help' for usage." >&2
+        exit 1
+        ;;
+esac

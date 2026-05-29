@@ -224,6 +224,7 @@ Hourly summary at the top of each hour. PM and worker logs live under `data/pm/`
 | `send_task.sh` | Drops a JSON task into a worker's inbox |
 | `invoke_worker.sh` | Runs a worker immediately (background) |
 | `cron_pm_wakeup.sh` | Sends `hourly_check` to PM's inbox |
+| `cf` | Thin Cloudflare API helper (DNS + cache purge). Loads token from `data/pm/workspace/.secrets/cloudflare.env`. Run `./cf help` for usage |
 | `spawn.sh` / `stop.sh` | Non-systemd lifecycle (dev only) |
 | `deploy/install.sh` | Full VPS install |
 | `deploy/*.service` | Systemd unit files |
